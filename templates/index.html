@@ -1,0 +1,227 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Health Prediction System</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f2f5fb;
+            color: #26334a;
+        }
+
+        header {
+            background: #263b68;
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        main {
+            max-width: 1050px;
+            margin: 30px auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000d;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-weight: bold;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccd3e0;
+            border-radius: 7px;
+        }
+
+        button {
+            background: #3159a5;
+            color: white;
+            border: none;
+            padding: 11px 18px;
+            border-radius: 7px;
+            cursor: pointer;
+            margin-top: 18px;
+        }
+
+        button:hover {
+            background: #203e7c;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border-bottom: 1px solid #e5e9f0;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background: #edf2fb;
+        }
+
+        .message {
+            padding: 12px;
+            background: #edf5ff;
+            border-radius: 7px;
+            margin-bottom: 15px;
+        }
+
+        .delete {
+            background: #c03939;
+        }
+
+        @media(max-width: 650px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>AI Health Prediction System</h1>
+    <p>Patient Information and Health Record Management</p>
+</header>
+
+<main>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}
+                <div class="message">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <section class="card">
+        <h2>Add Patient Record</h2>
+
+        <form action="/add" method="POST">
+            <div class="form-grid">
+
+                <div>
+                    <label>Full Name</label>
+                    <input type="text" name="full_name" required>
+                </div>
+
+                <div>
+                    <label>Date of Birth (DD/MM/YYYY)</label>
+                    <input type="text" name="dob"
+                           placeholder="28/03/2005" required>
+                </div>
+
+                <div>
+                    <label>Email Address</label>
+                    <input type="text" name="email" required>
+                </div>
+
+                <div>
+                    <label>Glucose</label>
+                    <input type="number" step="any" name="glucose" required>
+                </div>
+
+                <div>
+                    <label>Haemoglobin</label>
+                    <input type="number" step="any" name="haemoglobin" required>
+                </div>
+
+                <div>
+                    <label>Cholesterol</label>
+                    <input type="number" step="any" name="cholesterol" required>
+                </div>
+
+            </div>
+
+            <button type="submit">Save Patient Record</button>
+        </form>
+    </section>
+
+    <section class="card">
+        <h2>Patient Records</h2>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>DOB</th>
+                        <th>Email</th>
+                        <th>Glucose</th>
+                        <th>Haemoglobin</th>
+                        <th>Cholesterol</th>
+                        <th>AI Remarks</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for patient in patients %}
+                    <tr>
+                        <td>{{ patient.id }}</td>
+                        <td>{{ patient.full_name }}</td>
+                        <td>{{ patient.dob }}</td>
+                        <td>{{ patient.email }}</td>
+                        <td>{{ patient.glucose }}</td>
+                        <td>{{ patient.haemoglobin }}</td>
+                        <td>{{ patient.cholesterol }}</td>
+                        <td>{{ patient.remarks or "Not available" }}</td>
+                        <td>
+                            <a href="/edit/{{ patient.id }}">Edit</a>
+
+                            <form action="/delete/{{ patient.id }}"
+                                  method="POST"
+                                  onsubmit="return confirm('Delete this record?')">
+                                <button class="delete" type="submit">
+                                    Delete
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9">No patient records available.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+</main>
+
+</body>
+</html>

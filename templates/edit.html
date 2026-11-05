@@ -1,0 +1,90 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Patient</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f2f5fb;
+            margin: 0;
+            padding: 30px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px #00000015;
+        }
+        h2 { color: #183153; }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 11px;
+            margin-top: 6px;
+            box-sizing: border-box;
+            border: 1px solid #ccd3df;
+            border-radius: 6px;
+        }
+        button, a {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 11px 18px;
+            border: none;
+            border-radius: 6px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+        }
+        a {
+            background: #e8edf5;
+            color: #183153;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Edit Patient Details</h2>
+
+        <form method="POST">
+            <label>Full Name</label>
+            <input type="text" name="full_name"
+                   value="{{ patient.full_name }}" required>
+
+            <label>Date of Birth (DD/MM/YYYY)</label>
+            <input type="text" name="dob"
+                   value="{{ patient.dob }}" required>
+
+            <label>Email Address</label>
+            <input type="email" name="email"
+                   value="{{ patient.email }}" required>
+
+            <label>Glucose</label>
+            <input type="number" step="any" name="glucose"
+                   value="{{ patient.glucose }}" required>
+
+            <label>Haemoglobin</label>
+            <input type="number" step="any" name="haemoglobin"
+                   value="{{ patient.haemoglobin }}" required>
+
+            <label>Cholesterol</label>
+            <input type="number" step="any" name="cholesterol"
+                   value="{{ patient.cholesterol }}" required>
+
+            <button type="submit">Save Changes</button>
+            <a href="{{ url_for('home') }}">Back</a>
+        </form>
+    </div>
+</body>
+</html>
