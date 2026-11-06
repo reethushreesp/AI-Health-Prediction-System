@@ -1,27 +1,43 @@
 
 import os
 import re
+import math
 from datetime import datetime, date
 
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import (
+    Flask, render_template, request,
+    redirect, url_for, flash
+)
 from dotenv import load_dotenv
 from google import genai
+from markupsafe import escape
 
 from database import get_connection, create_table
 
-# Load environment variables
+
+# -----------------------------------
+# Flask and Gemini configuration
+# -----------------------------------
+
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "local-development-key")
+app.secret_key = os.getenv(
+    "FLASK_SECRET_KEY",
+    "local-development-key"
+)
 
-# Gemini AI configuration
 api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
 
+create_table()
+
+
+# -----------------------------------
+# Patient data validation
+# -----------------------------------
 
 def validate_patient_data(form):
-    """Validate patient details before saving."""
 
     errors = []
 
@@ -33,215 +49,336 @@ def validate_patient_data(form):
         errors.append("Full name is required.")
 
     try:
-        birth_date = datetime.strptime(dob, "%d/%m/%Y").date()
+        birth_date = datetime.strptime(
+            dob, "%d/%m/%Y"
+        ).date()
 
         if birth_date.strftime("%d/%m/%Y") != dob:
-            errors.append("Date must be in DD/MM/YYYY format.")
+            errors.append(
+                "Date must be in DD/MM/YYYY format."
+            )
+
         elif birth_date > date.today():
-            errors.append("Date of birth cannot be in the future.")
+            errors.append(
+                "Date of birth cannot be in the future."
+            )
 
     except ValueError:
-        errors.append("Please enter a valid date in DD/MM/YYYY format.")
+        errors.append(
+            "Please enter a valid date in DD/MM/YYYY format."
+        )
 
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        errors.append("Please enter a valid email address.")
+    if not re.fullmatch(
+        r"[^@\s]+@[^@\s]+\.[^@\s]+",
+        email
+    ):
+        errors.append(
+            "Please enter a valid email address."
+        )
 
     try:
         glucose = float(form.get("glucose", ""))
         haemoglobin = float(form.get("haemoglobin", ""))
         cholesterol = float(form.get("cholesterol", ""))
 
+        values = (glucose, haemoglobin, cholesterol)
+
         if not all(
-            value > 0 and value < float("inf")
-            for value in (glucose, haemoglobin, cholesterol)
+            math.isfinite(value) and value > 0
+            for value in values
         ):
-            errors.append("Blood test values must be positive numbers.")
+            errors.append(
+                "Blood test values must be positive numbers."
+            )
 
     except (ValueError, TypeError):
-        errors.append("Blood test values must be numeric.")
+        errors.append(
+            "Blood test values must be numeric."
+        )
         glucose = haemoglobin = cholesterol = 0
 
     if errors:
         return None, " ".join(errors)
 
-    return {
+    patient = {
         "full_name": full_name,
         "dob": dob,
         "email": email,
         "glucose": glucose,
         "haemoglobin": haemoglobin,
         "cholesterol": cholesterol
-    }, None
+    }
+
+    return patient, None
 
 
+# -----------------------------------
+# Gemini AI health remarks
+# -----------------------------------
 
 def generate_ai_remarks(glucose, haemoglobin, cholesterol):
-    """Request educational health information from Gemini AI."""
 
     if not client:
-        return "AI remarks unavailable: Gemini API key is not configured."
+        return (
+            "<b>AI Remarks:</b> API key is not configured."
+        )
 
     prompt = f"""
 You are an educational health information assistant.
 
-Review these blood test values:
+Review these values:
 Glucose: {glucose}
 Haemoglobin: {haemoglobin}
 Cholesterol: {cholesterol}
 
-Provide a short, cautious explanation of possible health risk indicators
-that may be worth discussing with a qualified healthcare professional.
+Write a short report using these exact headings:
 
-Important:
-- Do not diagnose a disease.
-- Do not prescribe medicines or treatments.
-- Do not assume units or testing conditions that were not provided.
-- Explain that interpretation depends on units, reference ranges,
-  age, medical history and whether the test was fasting.
-- Recommend professional review of the results.
-- If information is insufficient, clearly say so.
+**Glucose:** One short observation.
+**Haemoglobin:** One short observation.
+**Cholesterol:** One short observation.
+**Overall:** One short recommendation.
 
-Return a short response in simple language.
+Instructions:
+- Use simple and professional language.
+- Keep the complete response under 80 words.
+- Do not diagnose diseases or prescribe treatment.
+- Do not assume units or reference ranges.
+- Do not call values normal, high or low without sufficient context.
+- Recommend professional review.
+- Return only the report.
 """
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt
-        )
-        return response.text or "AI did not return any remarks."
+    models = [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite"
+    ]
 
-    except Exception as error:
-        print("Gemini API error:", error)
-        return "AI remarks are temporarily unavailable. Please try again later."
+    for model_name in models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
 
+            if response.text:
+                # Escape model output before displaying it.
+                safe_text = str(escape(response.text.strip()))
+
+                # Bold only the four approved headings.
+                safe_text = re.sub(
+                    r"\*\*(Glucose|Haemoglobin|Cholesterol|Overall):\*\*",
+                    r"<strong>\1:</strong>",
+                    safe_text
+                )
+
+                return safe_text.replace("\n", "<br>")
+
+        except Exception as error:
+            print(
+                f"Gemini error with {model_name}: {error}",
+                flush=True
+            )
+
+    return (
+        "<b>AI Remarks:</b> AI service is temporarily "
+        "unavailable. Please try again later."
+    )
+
+
+# -----------------------------------
+# Home page - Display patient records
+# -----------------------------------
 
 @app.route("/")
-def home():
+def index():
+
     connection = get_connection()
+
     patients = connection.execute(
         "SELECT * FROM patients ORDER BY id DESC"
     ).fetchall()
+
     connection.close()
 
-    return render_template("index.html", patients=patients)
+    return render_template(
+        "index.html",
+        patients=patients
+    )
 
+
+# -----------------------------------
+# Add patient record
+# -----------------------------------
 
 @app.route("/add", methods=["POST"])
 def add_patient():
-    data, error = validate_patient_data(request.form)
+
+    patient, error = validate_patient_data(request.form)
 
     if error:
-        flash(error)
-        return redirect(url_for("home"))
+        flash(error, "error")
+        return redirect(url_for("index"))
 
     connection = get_connection()
 
-    duplicate = connection.execute(
+    existing = connection.execute(
         "SELECT id FROM patients WHERE LOWER(email) = LOWER(?)",
-        (data["email"],)
+        (patient["email"],)
     ).fetchone()
 
-    if duplicate:
+    if existing:
         connection.close()
-        flash("A patient with this email address already exists.")
-        return redirect(url_for("home"))
+        flash("A patient with this email already exists.", "error")
+        return redirect(url_for("index"))
 
     remarks = generate_ai_remarks(
-        data["glucose"],
-        data["haemoglobin"],
-        data["cholesterol"]
+        patient["glucose"],
+        patient["haemoglobin"],
+        patient["cholesterol"]
     )
 
-    connection.execute("""
+    connection.execute(
+        """
         INSERT INTO patients
-        (full_name, dob, email, glucose, haemoglobin, cholesterol, remarks)
+        (full_name, dob, email, glucose,
+         haemoglobin, cholesterol, remarks)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        data["full_name"],
-        data["dob"],
-        data["email"],
-        data["glucose"],
-        data["haemoglobin"],
-        data["cholesterol"],
-        remarks
-    ))
+        """,
+        (
+            patient["full_name"],
+            patient["dob"],
+            patient["email"],
+            patient["glucose"],
+            patient["haemoglobin"],
+            patient["cholesterol"],
+            remarks
+        )
+    )
 
     connection.commit()
     connection.close()
 
-    flash("Patient record added successfully.")
-    return redirect(url_for("home"))
+    flash("Patient record added successfully.", "success")
 
+    return redirect(url_for("index"))
+
+
+# -----------------------------------
+# Edit patient record
+# -----------------------------------
 
 @app.route("/edit/<int:patient_id>", methods=["GET", "POST"])
 def edit_patient(patient_id):
+
     connection = get_connection()
 
-    patient = connection.execute(
-        "SELECT * FROM patients WHERE id = ?", (patient_id,)
+    existing_patient = connection.execute(
+        "SELECT * FROM patients WHERE id = ?",
+        (patient_id,)
     ).fetchone()
 
-    if not patient:
+    if not existing_patient:
         connection.close()
-        flash("Patient record not found.")
-        return redirect(url_for("home"))
+        flash("Patient record not found.", "error")
+        return redirect(url_for("index"))
 
     if request.method == "POST":
-        data, error = validate_patient_data(request.form)
+
+        patient, error = validate_patient_data(request.form)
 
         if error:
             connection.close()
-            flash(error)
-            return redirect(url_for("edit_patient", patient_id=patient_id))
+            flash(error, "error")
+            return redirect(
+                url_for("edit_patient", patient_id=patient_id)
+            )
 
         duplicate = connection.execute(
-            """SELECT id FROM patients
-               WHERE LOWER(email) = LOWER(?) AND id != ?""",
-            (data["email"], patient_id)
+            """
+            SELECT id FROM patients
+            WHERE LOWER(email) = LOWER(?) AND id != ?
+            """,
+            (patient["email"], patient_id)
         ).fetchone()
 
         if duplicate:
             connection.close()
-            flash("Another patient already uses this email address.")
-            return redirect(url_for("edit_patient", patient_id=patient_id))
+            flash(
+                "Another patient already uses this email.",
+                "error"
+            )
+            return redirect(
+                url_for("edit_patient", patient_id=patient_id)
+            )
 
-        connection.execute("""
+        remarks = generate_ai_remarks(
+            patient["glucose"],
+            patient["haemoglobin"],
+            patient["cholesterol"]
+        )
+
+        connection.execute(
+            """
             UPDATE patients
             SET full_name = ?, dob = ?, email = ?,
-                glucose = ?, haemoglobin = ?, cholesterol = ?
+                glucose = ?, haemoglobin = ?,
+                cholesterol = ?, remarks = ?
             WHERE id = ?
-        """, (
-            data["full_name"], data["dob"], data["email"],
-            data["glucose"], data["haemoglobin"],
-            data["cholesterol"], patient_id
-        ))
+            """,
+            (
+                patient["full_name"],
+                patient["dob"],
+                patient["email"],
+                patient["glucose"],
+                patient["haemoglobin"],
+                patient["cholesterol"],
+                remarks,
+                patient_id
+            )
+        )
 
         connection.commit()
         connection.close()
 
-        flash("Patient record updated successfully.")
-        return redirect(url_for("home"))
+        flash("Patient record updated successfully.", "success")
+
+        return redirect(url_for("index"))
 
     connection.close()
-    return render_template("edit.html", patient=patient)
 
+    return render_template(
+        "edit.html",
+        patient=existing_patient
+    )
+
+
+# -----------------------------------
+# Delete patient record
+# -----------------------------------
 
 @app.route("/delete/<int:patient_id>", methods=["POST"])
 def delete_patient(patient_id):
+
     connection = get_connection()
 
     connection.execute(
-        "DELETE FROM patients WHERE id = ?", (patient_id,)
+        "DELETE FROM patients WHERE id = ?",
+        (patient_id,)
     )
 
     connection.commit()
     connection.close()
 
-    flash("Patient record deleted successfully.")
-    return redirect(url_for("home"))
+    flash("Patient record deleted successfully.", "success")
 
+    return redirect(url_for("index"))
+
+
+# -----------------------------------
+# Start Flask application
+# -----------------------------------
 
 if __name__ == "__main__":
-    create_table()
     app.run(debug=True)
+
+
